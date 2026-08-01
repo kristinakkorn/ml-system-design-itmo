@@ -258,7 +258,7 @@ class TicketPipeline:
         route = self._resolve_route(classification)
 
         action, reason = self._decide(classification, evidence)
-        draft = self._make_draft(classification.intent, evidence, action)
+        draft = self._make_draft(evidence, action)
         latency_ms = max(1, round((time.perf_counter() - started) * 1000))
 
         audit_id = self.audit.write(
@@ -330,7 +330,7 @@ class TicketPipeline:
         return "agent_draft", "operator_approval_required"
 
     def _make_draft(
-        self, intent: str, evidence: list[Evidence], action: str
+        self, evidence: list[Evidence], action: str
     ) -> str | None:
         if action == "human_review":
             return None

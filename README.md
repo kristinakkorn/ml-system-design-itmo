@@ -1,122 +1,122 @@
-# Support Ticket Automation PoC
+# Автоматизация обработки тикетов поддержки
 
-Демо решения:
-![demo](demo/demo.gif)
+> Трек поступления: **«Искусственный интеллект»**. Артефакты, обязательные
+> только для AI Product (`product.md` и `WORKLOG.md`), в решение не входят.
 
+Решение принимает тикет из канала поддержки, определяет тему и уровень риска,
+находит релевантную статью базы знаний или похожий исторический тикет и выбирает
+действие: подготовить ответ либо передать обращение оператору. В целевой системе
+классификация работает на быстром пути до 500 мс, а retrieval и генерация ответа
+выполняются асинхронно.
 
-Минимальный работающий прототип к архитектуре из
-[architecture.md](architecture.md). Он демонстрирует полный путь:
+## Зачем это бизнесу
 
-```text
-mock-ticket → classification/risk → local retrieval → policy → draft/route → audit
-```
+Сейчас 200 тысяч тикетов в день при стоимости 150 ₽ за ручную обработку дают до
+30 млн ₽ операционных затрат в день. Автоматизация части из 40% типовых
+обращений высвобождает время операторов для сложных случаев и помогает отвечать
+в пределах SLA 15 минут во время всплесков. Для пользователя ценность — более
+быстрый и единообразный ответ, а для бизнеса — меньший backlog и стоимость
+обработки. Автоматизация расширяется только при сохранении CSAT не ниже 4,2 и
+отсутствии роста текущего reopen rate 9%.
 
-## Что можно показать на защите
+## Демонстрация
 
-1. **Happy path:** «Я забыла пароль и не могу войти». Система определяет
-   `password_reset`, находит статью KB, формирует grounded draft и разрешает
-   `auto_reply`.
-2. **Risky path:** «С карты дважды списали деньги». Система определяет
-   `charge_dispute`, запрещает автозакрытие и направляет тикет в `payments_l2` с
-   действием `human_review`.
-3. Дополнительно: неизвестный запрос получает низкий confidence и уходит в
-   `manual_triage`.
+![Демонстрация happy path и risky path](demo/demo.gif)
 
-Каждое решение записывается в `runtime/audit.jsonl`. Исходный текст туда не
-попадает: сохраняются SHA-256, labels, scores, источники и версии компонентов.
+PoC показывает два обязательных end-to-end сценария и один дополнительный:
 
-## Быстрый запуск через Docker Compose
+| Сценарий | Вход | Результат |
+|---|---|---|
+| Happy path | «Забыла пароль и не могу войти» | `password_reset` → найдена KB → `auto_reply` |
+| Risky path | «С карты дважды списали деньги» | `charge_dispute` → `payments_l2` → `human_review`, без draft |
+| Low confidence | неизвестная формулировка | `unknown` → `manual_triage` → `human_review` |
+
+Каждое решение получает `audit_id`. В audit log сохраняются версии компонентов,
+scores, найденные документы, маршрут и действие, но не исходный текст тикета.
+
+## Запуск PoC
+
+Требования: Docker с поддержкой Compose.
 
 ```bash
 docker compose up --build
 ```
 
-- UI: <http://localhost:8501>
-- Swagger API: <http://localhost:8000/docs>
-- healthcheck: <http://localhost:8000/health>
+После запуска:
 
-### Ошибка `CERTIFICATE_VERIFY_FAILED` при Docker build
+- Streamlit UI: <http://localhost:8501>;
+- Swagger API: <http://localhost:8000/docs>;
+- backend healthcheck: <http://localhost:8000/health>.
 
-В Dockerfile PyPI-хосты уже переданы в `PIP_TRUSTED_HOST`, поэтому повторите
-сборку без старого неуспешного слоя:
+Для демонстрации откройте UI, последовательно выберите `Happy path` и
+`Risky path` и сравните `action`, маршрут, найденные источники и наличие draft.
+Запись аудита внутри контейнера можно проверить командой:
+
+```bash
+docker compose exec backend tail -n 1 /app/runtime/audit.jsonl
+```
+
+## Smoke tests
+
+```bash
+docker compose run --rm backend pytest -q
+```
+
+Три теста проверяют happy path, risky path и low-confidence fallback. Ключевая
+safety-гарантия зафиксирована явно: risky и low-confidence тикеты никогда не
+получают `auto_reply`. Остановить запущенное демо: `docker compose down`.
+
+## Что реализовано, а что осталось дизайном
+
+| Реально работает в PoC | Описано как целевая архитектура |
+|---|---|
+| FastAPI endpoint и Streamlit UI | адаптеры chat/email/web/mobile и support platform |
+| rule-based intent/risk classifier | fine-tuned encoder с calibrated confidence |
+| локальный TF-IDF retrieval по 7 JSON-документам | BM25 + dense embeddings + vector DB + reranker |
+| ответ из утверждённого шаблона KB | RAG → локальная GLM → разрешённый внешний LLM fallback |
+| policy gate для `auto_reply`/`human_review` | отдельный safety service, DLP и policy registry |
+| append-only JSONL audit | защищённое audit storage с RBAC и retention |
+| синхронный процесс в одном приложении | hot path, event bus и асинхронные workers |
+
+PoC доказывает связность архитектурной идеи, а не качество production-модели или
+работу под нагрузкой 200 тысяч тикетов в день.
+
+## Допущения и ограничения PoC
+
+- Поддерживаются русский текст и четыре демонстрационных intent; вложения и OCR
+  не реализованы.
+- Confidence и safety thresholds заданы вручную, потому что размеченного
+  production-датасета нет.
+- Мини-база знаний считается проверенной и актуальной; исторические тикеты
+  используются как дополнительный evidence, но не как источник текста ответа.
+- Настоящая GLM и внешний LLM API не вызываются: их роль заменяет
+  детерминированный шаблон, чтобы результат можно было воспроизвести.
+- В PoC нет event bus, autoscaling, production DLP и защищённого хранилища
+  аудита; эти части показаны только в целевом дизайне.
+
+## Документация
+
+| Файл | Содержание |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | компоненты, поток данных, hot/async paths, хранилища и fallback |
+| [docs/ml.md](docs/ml.md) | rules/ML/embeddings/RAG/LLM, данные, разметка и валидация |
+| [docs/monitoring.md](docs/monitoring.md) | технические, ML, продуктовые и cost-метрики |
+| [docs/risks-and-ops.md](docs/risks-and-ops.md) | highload, privacy, safety и human-in-the-loop |
+| [AI_USAGE.md](AI_USAGE.md) | как использовался AI и какие его ошибки были исправлены |
+| [SELF_REVIEW.md](SELF_REVIEW.md) | слабые места, нерешённые риски и критерии остановки пилота |
+
+<details>
+<summary>Если Docker build падает с CERTIFICATE_VERIFY_FAILED</summary>
+
+Dockerfile уже ограниченно доверяет официальным хостам PyPI. Пересоберите образ
+без старого слоя:
 
 ```bash
 docker compose build --no-cache
 docker compose up
 ```
 
-Сообщение `No matching distribution found` в этом случае вторично: `pip` не
-увидел список версий из-за TLS-ошибки, а не потому, что FastAPI отсутствует.
+`trusted-host` — компромисс только для локального PoC. В production нужно
+добавить корпоративный root CA в trust store образа.
 
-`trusted-host` отключает проверку сертификата только для `pypi.org` и
-`files.pythonhosted.org`; это практичный fallback для локального PoC за
-корпоративным proxy. Для production правильнее добавить корневой сертификат
-компании в trust store образа и собрать с пустым параметром:
-
-```bash
-PIP_TRUSTED_HOST= docker compose build --no-cache
-```
-
-## Локальный запуск
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-В другом терминале:
-
-```bash
-source .venv/bin/activate
-streamlit run ui.py
-```
-
-## Запуск тестов
-
-```bash
-pytest -q
-```
-
-Тесты фиксируют главную safety-гарантию: risky и low-confidence тикеты никогда
-не получают `auto_reply`.
-
-## Пример API
-
-```bash
-curl -s http://localhost:8000/api/v1/tickets/process \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "channel": "chat",
-    "subject": "Двойное списание",
-    "text": "С карты дважды списали деньги. Верните деньги за платеж."
-  }'
-```
-
-## Что здесь упрощено
-
-| В PoC | В целевой архитектуре |
-|---|---|
-| ключевые слова и правила | fine-tuned encoder + calibrated confidence + hard-risk rules |
-| TF-IDF char vectors в памяти | BM25 + dense embeddings + vector DB + reranker |
-| 7 локальных JSON-документов | версионируемая KB и обезличенная история с ACL/freshness |
-| готовый шаблон ответа | RAG → локальная GLM → разрешённый внешний LLM fallback |
-| один FastAPI-процесс | stateless replicas, event bus и отдельные async workers |
-| JSONL audit | append-only/WORM storage с RBAC и retention policy |
-| синхронный вызов всего pipeline | routing синхронный, retrieval/generation асинхронные |
-
-Упрощение намеренное: PoC доказывает связность компонентов и правильное решение
-policy, но не производительность, качество на реальном распределении или
-production-безопасность.
-
-## Структура
-
-```text
-app/main.py        API и demo-сценарии
-app/pipeline.py    classifier, retrieval, policy, draft, audit
-app/models.py      API-контракты
-data/              мини-KB и обезличенная история
-ui.py              Streamlit UI
-tests/             happy, risky и low-confidence paths
-```
+</details>

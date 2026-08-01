@@ -20,6 +20,8 @@ RUN PIP_INDEX_URL="${PIP_INDEX_URL}" \
 
 COPY app ./app
 COPY data ./data
+COPY tests ./tests
+COPY pyproject.toml .
 COPY ui.py ./ui.py
 
 RUN mkdir -p /app/runtime
