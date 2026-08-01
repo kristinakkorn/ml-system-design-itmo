@@ -1,5 +1,9 @@
 # Support Ticket Automation PoC
 
+Демо решения:
+![demo](demo/demo-ml-itmo.mp4)
+
+
 Минимальный работающий прототип к архитектуре из
 [architecture.md](architecture.md). Он демонстрирует полный путь:
 
