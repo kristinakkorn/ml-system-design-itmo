@@ -1,0 +1,23 @@
+[
+  {
+    "id": "hist-001",
+    "source_type": "historical_ticket",
+    "title": "Пользователь забыл пароль",
+    "content": "Не мог войти после смены телефона. Успешно использовал стандартный сценарий сброса пароля, повторного обращения не было.",
+    "tags": ["password_reset", "account_support_l1", "resolved"]
+  },
+  {
+    "id": "hist-002",
+    "source_type": "historical_ticket",
+    "title": "Двойное списание по карте",
+    "content": "Тикет с двумя списаниями был передан в payments_l2. После проверки одна операция оказалась банковским hold, решение подтвердил оператор.",
+    "tags": ["payments", "дважды списали", "human_review"]
+  },
+  {
+    "id": "hist-003",
+    "source_type": "historical_ticket",
+    "title": "Массовая ошибка 503",
+    "content": "Обращение вошло в кластер массового инцидента. Пользователь получил утверждённый status template, повторного обращения не было.",
+    "tags": ["service_availability", "ошибка 503", "incident"]
+  }
+]

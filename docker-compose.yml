@@ -1,0 +1,43 @@
+services:
+  backend:
+    image: support-ticket-poc:local
+    build:
+      context: .
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST-pypi.org files.pythonhosted.org}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      AUDIT_LOG_PATH: /app/runtime/audit.jsonl
+    ports:
+      - "8000:8000"
+    volumes:
+      - audit-data:/app/runtime
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ui:
+    image: support-ticket-poc:local
+    build:
+      context: .
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST-pypi.org files.pythonhosted.org}
+    command: streamlit run ui.py --server.address 0.0.0.0 --server.port 8501
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  audit-data:
